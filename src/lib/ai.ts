@@ -38,22 +38,18 @@ export async function generateVisuals({ mode, images, formData, count }: Generat
       basePrompt = `[MODE FOTO PRODUK] Buat foto katalog produk profesional dari gambar produk ini. ${formData.prompt ? 'Arahan: ' + formData.prompt : 'Buat terlihat premium dan elegan.'}`;
       break;
     case 'thumbnail':
-      basePrompt = `[MODE THUMBNAIL YOUTUBE] Buat desain thumbnail YouTube/konten yang clickbait dan menarik. JANGAN ubah gambar utama kecuali diminta. 
-
-INSTRUKSI TEKS SANGAT PENTING:
-Kamu WAJIB menuliskan teks tipografi besar di dalam gambar dengan ejaan yang 100% PERSIS, huruf demi huruf, tanpa typo:
-- Judul Utama: "${formData.title}"
-${formData.subtitle ? '- Sub-judul: "' + formData.subtitle + '"\n' : ''}
-Fokus utama kamu adalah memastikan teks ini terbaca jelas, besar, dan ejaannya sempurna. Dilarang keras membuat kata-kata aneh atau typo. ${formData.prompt ? 'Arahan gaya: ' + formData.prompt : ''}`;
+      basePrompt = `[MODE THUMBNAIL YOUTUBE] Buat desain thumbnail YouTube/konten yang menarik. JANGAN ubah gambar utama kecuali diminta. 
+Pastikan teks berikut ditulis dengan ejaan yang BENAR dan JELAS di dalam gambar:
+Judul: "${formData.title}"
+${formData.subtitle ? 'Sub-judul: "' + formData.subtitle + '"\n' : ''}
+${formData.prompt ? 'Arahan gaya: ' + formData.prompt : ''}`;
       break;
     case 'poster':
       basePrompt = `[MODE POSTER PROMOSI] Buat desain poster promosi profesional. 
-
-INSTRUKSI TEKS SANGAT PENTING:
-Kamu WAJIB menuliskan teks tipografi di dalam gambar dengan ejaan yang 100% PERSIS, huruf demi huruf, tanpa typo:
-- Judul Utama: "${formData.title}"
-${formData.subtitle ? '- Sub-judul: "' + formData.subtitle + '"\n' : ''}
-Fokus utama kamu adalah memastikan teks ini terbaca jelas dan ejaannya sempurna. Dilarang keras membuat kata-kata aneh atau typo. ${formData.prompt ? 'Arahan: ' + formData.prompt : ''}`;
+Pastikan teks berikut ditulis dengan ejaan yang BENAR dan JELAS di dalam gambar:
+Judul: "${formData.title}"
+${formData.subtitle ? 'Sub-judul: "' + formData.subtitle + '"\n' : ''}
+${formData.prompt ? 'Arahan: ' + formData.prompt : ''}`;
       break;
     case 'photoshoot':
       const style = formData.photoshootStyle;
@@ -62,12 +58,10 @@ Fokus utama kamu adalah memastikan teks ini terbaca jelas dan ejaannya sempurna.
       break;
     case 'logo':
       basePrompt = `[MODE DESAIN LOGO] Buat desain logo profesional. 
-
-INSTRUKSI TEKS SANGAT PENTING:
-Kamu WAJIB menuliskan teks di dalam logo dengan ejaan yang 100% PERSIS, huruf demi huruf, tanpa typo:
-- Nama Brand: "${formData.brandName}"
-${formData.tagline ? '- Tagline: "' + formData.tagline + '"\n' : ''}
-Fokus utama kamu adalah memastikan teks ini terbaca jelas dan ejaannya sempurna. Dilarang keras membuat kata-kata aneh atau typo. ${formData.prompt ? 'Gaya logo: ' + formData.prompt : 'Gaya modern minimalis.'}`;
+Pastikan teks berikut ditulis dengan ejaan yang BENAR dan JELAS di dalam logo:
+Nama Brand: "${formData.brandName}"
+${formData.tagline ? 'Tagline: "' + formData.tagline + '"\n' : ''}
+${formData.prompt ? 'Gaya logo: ' + formData.prompt : 'Gaya modern minimalis.'}`;
       break;
     case 'busana':
       basePrompt = `[MODE COBA BUSANA] Pakaikan busana dari gambar referensi ke model di gambar utama. PENTING: JANGAN ubah background, JANGAN ubah bentuk tubuh, JANGAN ubah posisi model. Hanya ganti pakaiannya saja secara realistis. ${formData.prompt ? 'Arahan tambahan: ' + formData.prompt : ''}`;
@@ -144,15 +138,20 @@ Fokus utama kamu adalah memastikan teks ini terbaca jelas dan ejaannya sempurna.
     }
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: { parts: callParts },
-        config: {
-          imageConfig: {
-            aspectRatio: aspectRatio as any,
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: { parts: callParts },
+          config: {
+            imageConfig: {
+              aspectRatio: aspectRatio as any,
+            }
           }
-        }
-      });
+        }),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Waktu proses AI habis (Timeout). Silakan coba lagi.')), 60000)
+        )
+      ]);
 
       // Extract image from response
       for (const part of response.candidates?.[0]?.content?.parts || []) {
@@ -164,6 +163,9 @@ Fokus utama kamu adalah memastikan teks ini terbaca jelas dan ejaannya sempurna.
       }
     } catch (err) {
       console.error(`Error generating variation ${index + 1}:`, err);
+      if (err instanceof Error && err.message.includes('Timeout')) {
+        throw err; // Re-throw timeout to be caught by the outer block
+      }
     }
     return null;
   });
@@ -174,7 +176,8 @@ Fokus utama kamu adalah memastikan teks ini terbaca jelas dan ejaannya sempurna.
   const validResults = results.filter((r): r is string => r !== null);
   
   if (validResults.length === 0) {
-    throw new Error("Gagal menghasilkan gambar dari AI.");
+    // Check if any promise threw a timeout error
+    throw new Error("Gagal menghasilkan gambar dari AI. Pastikan instruksi tidak melanggar kebijakan keamanan atau coba lagi.");
   }
 
   return validResults;

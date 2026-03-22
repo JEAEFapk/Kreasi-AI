@@ -19,6 +19,17 @@ export default function Workspace({ activeMode, onSelectMode }: WorkspaceProps) 
   const [results, setResults] = useState<string[]>([]);
   const [fullscreenImage, setFullscreenImage] = useState<string | null>(null);
   const [generateCount, setGenerateCount] = useState<number>(2);
+  const [loadingMessageIdx, setLoadingMessageIdx] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const LOADING_MESSAGES = [
+    "Menganalisis gambar dan instruksi...",
+    "Menerapkan gaya visual...",
+    "Menyesuaikan pencahayaan dan warna...",
+    "Menyempurnakan detail akhir...",
+    "Hampir selesai, mohon tunggu sebentar lagi..."
+  ];
 
   // Reset state when mode changes
   useEffect(() => {
@@ -28,7 +39,35 @@ export default function Workspace({ activeMode, onSelectMode }: WorkspaceProps) 
     setIsGenerating(false);
     setFullscreenImage(null);
     setGenerateCount(2);
+    setErrorMsg(null);
   }, [activeMode]);
+
+  useEffect(() => {
+    let messageInterval: NodeJS.Timeout;
+    let progressInterval: NodeJS.Timeout;
+    
+    if (isGenerating) {
+      setLoadingMessageIdx(0);
+      setProgress(0);
+      
+      messageInterval = setInterval(() => {
+        setLoadingMessageIdx(prev => Math.min(prev + 1, LOADING_MESSAGES.length - 1));
+      }, 4000);
+
+      progressInterval = setInterval(() => {
+        setProgress(prev => {
+          if (prev < 85) return prev + Math.random() * 4;
+          if (prev < 98) return prev + 0.5;
+          return prev;
+        });
+      }, 500);
+    }
+    
+    return () => {
+      clearInterval(messageInterval);
+      clearInterval(progressInterval);
+    };
+  }, [isGenerating]);
 
   const handleImageUpload = (field: string, file: File, multiple: boolean = false) => {
     const reader = new FileReader();
@@ -84,6 +123,7 @@ export default function Workspace({ activeMode, onSelectMode }: WorkspaceProps) 
     if (!modeConfig) return;
     setIsGenerating(true);
     setResults([]);
+    setErrorMsg(null);
     
     // Generate 2 variations for all modes except mix
     const targetCount = modeConfig.id === 'mix' ? generateCount : 2;
@@ -96,9 +136,9 @@ export default function Workspace({ activeMode, onSelectMode }: WorkspaceProps) 
         count: targetCount,
       });
       setResults(generatedImages);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Generation failed:", error);
-      alert("Gagal membuat visual. Silakan coba lagi.");
+      setErrorMsg(error.message || "Gagal membuat visual. Silakan coba lagi.");
     } finally {
       setIsGenerating(false);
     }
@@ -227,6 +267,20 @@ export default function Workspace({ activeMode, onSelectMode }: WorkspaceProps) 
 
           {/* Text Inputs */}
           <div className="space-y-4">
+            {['thumbnail', 'poster', 'logo'].includes(modeConfig.id) && (
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex gap-3 text-sm text-blue-200">
+                <div className="mt-0.5">💡</div>
+                <div>
+                  <strong className="text-white block mb-1">Tips Teks AI:</strong>
+                  AI pembuat gambar pada dasarnya adalah "pelukis", bukan "mesin tik". Untuk hasil terbaik:
+                  <ul className="list-disc list-inside mt-1 space-y-0.5 text-blue-200/80">
+                    <li>Gunakan teks yang sangat singkat (1-3 kata).</li>
+                    <li>Hindari kalimat panjang atau paragraf.</li>
+                    <li>Jika butuh teks panjang, kosongkan kolom ini dan tambahkan teks nanti menggunakan Canva/Photoshop.</li>
+                  </ul>
+                </div>
+              </div>
+            )}
             {(modeConfig.requiredFields.includes('title') || modeConfig.optionalFields.includes('title')) && (
               <InputField
                 label="Judul"
@@ -335,6 +389,11 @@ export default function Workspace({ activeMode, onSelectMode }: WorkspaceProps) 
 
           {/* Generate Button */}
           <div className="flex flex-col items-center pt-4 space-y-3">
+            {errorMsg && (
+              <div className="w-full bg-red-500/20 border border-red-500/50 text-red-200 p-4 rounded-xl text-center text-sm mb-2">
+                {errorMsg}
+              </div>
+            )}
             <button
               onClick={handleGenerate}
               disabled={!isReady() || isGenerating}
@@ -376,14 +435,38 @@ export default function Workspace({ activeMode, onSelectMode }: WorkspaceProps) 
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="glass-panel p-8 rounded-2xl flex flex-col items-center justify-center space-y-4"
+              className="glass-panel p-8 rounded-2xl flex flex-col items-center justify-center space-y-6 overflow-hidden"
             >
-              <div className="relative w-16 h-16">
-                <div className="absolute inset-0 rounded-full border-t-2 border-blue-500 animate-spin" />
-                <div className="absolute inset-2 rounded-full border-r-2 border-purple-500 animate-spin animation-delay-150" />
-                <div className="absolute inset-4 rounded-full border-b-2 border-cyan-500 animate-spin animation-delay-300" />
+              <div className="relative w-20 h-20">
+                <div className="absolute inset-0 rounded-full border-t-4 border-blue-500 animate-spin" />
+                <div className="absolute inset-2 rounded-full border-r-4 border-purple-500 animate-spin animation-delay-150" />
+                <div className="absolute inset-4 rounded-full border-b-4 border-cyan-500 animate-spin animation-delay-300" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-xs font-bold text-white">{Math.round(progress)}%</span>
+                </div>
               </div>
-              <p className="text-blue-200 animate-pulse">AI sedang meracik visual profesional Anda...</p>
+              
+              <div className="w-full max-w-md space-y-3 text-center">
+                <motion.p 
+                  key={loadingMessageIdx}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="text-blue-100 font-medium h-6"
+                >
+                  {LOADING_MESSAGES[loadingMessageIdx]}
+                </motion.p>
+                
+                <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                  <motion.div 
+                    className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-500"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progress}%` }}
+                    transition={{ ease: "linear", duration: 0.5 }}
+                  />
+                </div>
+                <p className="text-xs text-blue-200/50">Proses ini biasanya memakan waktu 10-20 detik tergantung kerumitan gambar.</p>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
